@@ -16,7 +16,7 @@ const fixturePr = (number, extra = {}) => ({
 test('server syncs direct and repository-scoped requests with deduplication and safe assets', { timeout: 15000 }, async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'merge-radar-test-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  for (const file of ['server.mjs', 'lib.mjs', 'reviews.mjs', 'index.html', 'ui-state.mjs', 'config.example.json']) {
+  for (const file of ['server.mjs', 'lib.mjs', 'reviews.mjs', 'notifications.mjs', 'index.html', 'ui-state.mjs', 'config.example.json']) {
     await cp(new URL(file, import.meta.url), join(dir, file));
   }
   await mkdir(join(dir, 'bin'));

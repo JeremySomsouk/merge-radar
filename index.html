@@ -89,6 +89,7 @@
   <label>Ignored checks (comma-separated, partial names)<input name="ignore" placeholder="e.g. codecov/patch"></label>
   <label>First section<select name="first"><option value="mine">Opened by me</option><option value="bot">Opened by bots</option></select></label>
   <label>Refresh every (minutes)<input name="minutes" type="number" min="1" max="60" required></label>
+  <label>New review notifications (macOS)<select name="reviewNotifications"><option value="false">Off</option><option value="true">On, including when the dashboard is closed</option></select></label>
   <label>Mark idle after (days)<input name="idleDays" type="number" min="1" max="90" required></label>
   <label>Review source<select name="reviewSource" id="review-source"><option value="github">Direct requests across GitHub</option><option value="repositories">My repositories and teams</option></select></label>
   <fieldset class="review-settings" id="review-settings" hidden>
@@ -183,7 +184,7 @@ function saveSettings(event) {
   event.preventDefault();
   const data = { ...settings, ...Object.fromEntries(new FormData(event.target)) };
   event.target.hidden = true;
-  syncConfig({ method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...data, minutes: Number(data.minutes), idleDays: Number(data.idleDays), reviewMaxAgeDays: Number(data.reviewMaxAgeDays) }) });
+  syncConfig({ method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...data, reviewNotifications: String(data.reviewNotifications) === 'true', minutes: Number(data.minutes), idleDays: Number(data.idleDays), reviewMaxAgeDays: Number(data.reviewMaxAgeDays) }) });
 }
 function resetSettings() {
   document.getElementById('settings').hidden = true;

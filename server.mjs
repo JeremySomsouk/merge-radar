@@ -4,6 +4,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import { PR_FIELDS, preparePrs } from './lib.mjs';
 import { findRepositoryReviews, hydrateReviews } from './reviews.mjs';
+import { checkReviewNotifications, notifyMac } from './notifications.mjs';
 
 const run = promisify(execFile);
 const PORT = Number(process.env.PORT ?? 4747);
@@ -16,6 +17,27 @@ const ASSETS = new Map([
 ]);
 const QUERY = `query($q: String!) { search(query: $q, type: ISSUE, first: 50) { nodes { ${PR_FIELDS} } } }`;
 const pendingLoads = new Map();
+const NOTIFICATION_STATE = new URL('./notification-state.json', import.meta.url);
+
+async function pollNotifications() {
+  let minutes = 3;
+  try {
+    const config = await loadConfig();
+    minutes = Math.max(1, Math.min(60, Number(config.minutes) || 3));
+    if (config.reviewNotifications === true && process.platform === 'darwin') {
+      const prs = await syncPrs(config);
+      if (JSON.stringify(await loadConfig()) !== JSON.stringify(config)) return;
+      await checkReviewNotifications({
+        prs, config, file: NOTIFICATION_STATE,
+        notify: (urls) => notifyMac(run, urls, `http://localhost:${PORT}`),
+      });
+    }
+  } catch {
+    console.error('Review notification sync failed; will retry on the next refresh.');
+  } finally {
+    setTimeout(pollNotifications, minutes * 60000).unref();
+  }
+}
 
 async function search(keyword, extra, filter) {
   const title = keyword ? `"${keyword}" in:title` : '';
@@ -93,3 +115,5 @@ createServer(async (req, res) => {
     res.end(String(err.stderr || err.message));
   }
 }).listen(PORT, '127.0.0.1', () => console.log(`merge-radar on http://localhost:${PORT}`));
+
+pollNotifications();

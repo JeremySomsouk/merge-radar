@@ -85,6 +85,7 @@ The app works with the defaults immediately. To customize them, copy `config.exa
 | Ignored checks (`ignore`) | none | Comma-separated parts of check names that never count as blockers |
 | First section (`first`: `mine` or `bot`) | Opened by me | Which section comes first |
 | Refresh every (`minutes`) | 3 minutes | Auto refresh interval |
+| New review notifications (`reviewNotifications`) | Off | macOS background alerts for new review requests |
 | Mark idle after (`idleDays`) | 3 days | PRs without updates for this long are faded and tagged |
 | Review source (`reviewSource`) | `github` | Direct GitHub search, or `repositories` for repository and team matching |
 | Review repositories (`reviewRepos`) | none | Comma-separated `owner/repository` names for repository mode |
@@ -94,9 +95,17 @@ The app works with the defaults immediately. To customize them, copy `config.exa
 
 Each lane in "Waiting on others" and "Ready to merge" has a **Copy links** button that copies a Markdown list of its PRs, ready to paste into a chat.
 
+## Review notifications (macOS)
+
+Install the optional helper with `brew install terminal-notifier`, then turn on **Settings > New review notifications** to receive a macOS alert when new PRs enter your review queue. The background server checks at your configured refresh interval, even with the dashboard closed. Keep the server running, or install the login agent above. Enabling or changing settings takes effect on the next scheduled check.
+
+The first successful check establishes a quiet baseline. Later checks combine newly requested PRs into one count-only notification, without repository names or titles. Unchanged requests do not repeat, including after a restart. A request that leaves the queue and later returns can notify again. Changing the review scope establishes a fresh baseline. Failed syncs preserve the previous state and retry on the next check. Browser snoozes only affect the dashboard, not this background watcher.
+
+Click a single-review notification to open that PR directly on GitHub. A notification for several new reviews opens the dashboard. Click actions use [terminal-notifier](https://github.com/julienXX/terminal-notifier). Allow its notifications in macOS System Settings if needed; Focus settings can silence alerts. The helper must be on the server's PATH. Missing-helper errors are logged and retried. Notifications are macOS-only and disabled by default.
+
 ## Privacy
 
-The server listens only on `127.0.0.1`. The browser loads its assets from the local server, and the server calls GitHub through your existing `gh` login. The app has no analytics or third-party scripts and does not save PR responses to disk. Settings are saved locally in `config.json`; GitHub CLI manages your credentials separately. Snoozed PR URLs and wake-up times are stored in your browser's local storage, with no titles or PR contents.
+The server listens only on `127.0.0.1`. The browser loads its assets from the local server, and the server calls GitHub through your existing `gh` login. The app has no analytics or third-party scripts and does not save full PR responses to disk. Notification tracking stores review URLs and the review scope in git-ignored `notification-state.json`, without PR titles or contents. Settings are saved locally in `config.json`; GitHub CLI manages your credentials separately. Snoozed PR URLs and wake-up times are stored in your browser's local storage, with no titles or PR contents.
 
 Local settings, session artifacts, environment files, keys, and logs are excluded by `.gitignore`. Keep organization names, team filters, and repository-specific settings in `config.json`; use generic values in `config.example.json`. Review screenshots and copied PR links before sharing them because they can contain private repository names and PR titles.
 
@@ -112,6 +121,7 @@ Local settings, session artifacts, environment files, keys, and logs are exclude
 
 - `server.mjs` serves the page and `/api/prs`, which searches authored and assigned PRs and loads reviews from the selected source.
 - `reviews.mjs` paginates repository review requests and fetches their current checks and feedback through GitHub GraphQL.
+- `notifications.mjs` detects new review requests, persists the local baseline, and sends count-only macOS notifications.
 - `lib.mjs` classifies each PR into a lane. It is pure and covered by `lib.test.mjs`.
 - `ui-state.mjs` handles local snooze expiry and review-request text, covered by `ui-state.test.mjs`.
 - `index.html` is the whole UI, with no build step and no dependencies.

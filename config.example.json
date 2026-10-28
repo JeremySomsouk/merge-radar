@@ -9,5 +9,6 @@
   "reviewRepos": "",
   "reviewTeams": "",
   "reviewExcludePrefixes": "",
-  "reviewMaxAgeDays": 60
+  "reviewMaxAgeDays": 60,
+  "reviewNotifications": false
 }
