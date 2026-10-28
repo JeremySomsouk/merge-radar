@@ -30,7 +30,7 @@ test('server syncs direct and repository-scoped requests with deduplication and 
       [{ number: 2, title: 'DEMO change 2', created_at: new Date().toISOString(), user: { login: 'teammate' }, requested_reviewers: [{ login: 'octocat' }] }],
       [{ number: 4, title: 'Other service refactor', created_at: new Date().toISOString(), user: { login: 'teammate' }, requested_teams: [{ slug: 'platform' }] }],
     ],
-    details: { 4: fixturePr(4, { title: 'Other service refactor' }) },
+    details: { 2: requested, 4: fixturePr(4, { title: 'Other service refactor' }) },
   }));
   await writeFile(join(dir, 'bin', 'gh'), `#!/usr/bin/env node
 const fs = require('node:fs');
@@ -51,8 +51,16 @@ if (search) {
   fs.appendFileSync('queries.log', query + '\\n');
   const nodes = fixtures[query.split(' ').at(-1)];
   if (!nodes) process.exit(3);
+  if (fs.existsSync('wait-for-details')) {
+    const deadline = Date.now() + 3000;
+    while (!fs.existsSync('details-started')) {
+      if (Date.now() > deadline) { console.error('Review details waited for searches'); process.exit(9); }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+    }
+  }
   console.log(JSON.stringify({ data: { search: { nodes } } }));
 } else {
+  fs.writeFileSync('details-started', '');
   const number = args.find(arg => arg.startsWith('number=')).slice(7);
   console.log(JSON.stringify({ data: { repository: { pullRequest: fixtures.details[number] } } }));
 }
@@ -104,6 +112,7 @@ await import('./server.mjs');
     keyword: 'DEMO', extra: 'repo:demo/app', ignore: '', reviewSource: 'repositories',
     reviewRepos: 'demo/app', reviewTeams: 'demo/platform',
   }));
+  await writeFile(join(dir, 'wait-for-details'), '');
   const responses = await Promise.all([fetch(base + '/api/prs'), fetch(base + '/api/prs')]);
   const [scoped, concurrent] = await Promise.all(responses.map(response => response.json()));
   assert.deepEqual(scoped, concurrent);

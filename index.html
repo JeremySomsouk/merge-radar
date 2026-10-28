@@ -66,6 +66,15 @@
   .snoozed summary { cursor: pointer; color: var(--muted); font-weight: 600; margin-bottom: 12px; }
   .error { color: var(--me); background: var(--me-soft); border-radius: 8px; padding: 10px; margin-bottom: 16px; white-space: pre-wrap; }
   .error:empty { display: none; }
+  .loading { display: grid; justify-items: center; gap: 12px; padding: 72px 16px; text-align: center; }
+  .loading[hidden] { display: none; }
+  .loading strong { font-size: 16px; }
+  .loading p { margin: 0; color: var(--muted); }
+  .radar { position: relative; width: 96px; height: 96px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: 50%; background: repeating-radial-gradient(circle, transparent 0 14px, var(--border) 15px 16px, transparent 17px 30px); overflow: hidden; }
+  .radar::before { content: ""; position: absolute; inset: 0; background: conic-gradient(from 0deg, transparent 65%, var(--ready-soft) 85%, var(--ready)); border-radius: 50%; animation: radar-sweep 2.4s linear infinite; }
+  .radar::after { content: ""; position: absolute; width: 7px; height: 7px; top: 26px; left: 59px; border-radius: 50%; background: var(--ready); box-shadow: -35px 29px 0 var(--review); }
+  @keyframes radar-sweep { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .radar::before { animation: none; } }
   .settings { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px 20px; align-items: end; }
   .settings[hidden] { display: none; }
   .review-settings { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px 20px; border: 0; padding: 0; margin: 0; }
@@ -101,7 +110,12 @@
   <div class="actions"><button class="primary" type="submit">Save</button><button id="reset-settings" type="button">Reset to defaults</button></div>
 </form>
 <div id="error" class="error" role="alert"></div>
-<div id="groups"></div>
+<div id="loading" class="loading" role="status">
+  <div class="radar" aria-hidden="true"></div>
+  <strong>Scanning your pull requests</strong>
+  <p>Gathering reviews and checks from GitHub. This can take a moment.</p>
+</div>
+<div id="groups" aria-busy="true"></div>
 <script type="module">
 import { nextMorning, readSnoozes, reviewRequestText } from '/ui-state.mjs';
 
@@ -115,6 +129,7 @@ let wakeTimer;
 let refreshVersion = 0;
 let refreshing = false;
 let lastPrs = [];
+let hasLoaded = false;
 let snoozes = loadSnoozes();
 
 function loadSnoozes() {
@@ -152,13 +167,17 @@ function copyLinks(button, source, lane) {
   return copyText(button, text);
 }
 
+async function loadSettings(options) {
+  const res = await fetch('/api/config', options);
+  if (!res.ok) throw new Error(await res.text());
+  settings = await res.json();
+  clearInterval(timer);
+  timer = setInterval(refresh, settings.minutes * 60 * 1000);
+}
+
 async function syncConfig(options) {
   try {
-    const res = await fetch('/api/config', options);
-    if (!res.ok) throw new Error(await res.text());
-    settings = await res.json();
-    clearInterval(timer);
-    timer = setInterval(refresh, settings.minutes * 60 * 1000);
+    await loadSettings(options);
     await refresh();
   } catch (err) {
     document.getElementById('error').textContent = err.message;
@@ -235,7 +254,7 @@ function jumpTo(key) {
 }
 
 function render() {
-  if (!settings) return;
+  if (!settings || !hasLoaded) return;
   snoozes = readSnoozes(JSON.stringify(snoozes));
   clearTimeout(wakeTimer);
   const nextWake = Math.min(...Object.values(snoozes));
@@ -277,11 +296,12 @@ async function refresh() {
   setRefreshing(true);
   document.getElementById('status').textContent = 'Refreshing...';
   try {
-    const res = await fetch('/api/prs');
+    const [res] = await Promise.all([fetch('/api/prs'), settings ? null : loadSettings()]);
     if (!res.ok) throw new Error(await res.text());
     const prs = await res.json();
     if (version !== refreshVersion) return;
     lastPrs = prs;
+    hasLoaded = true;
     document.getElementById('error').textContent = '';
     render();
     document.getElementById('status').textContent = `Updated ${new Date().toLocaleTimeString()}`;
@@ -296,6 +316,8 @@ async function refresh() {
 
 function setRefreshing(value) {
   refreshing = value;
+  document.getElementById('loading').hidden = !value || hasLoaded;
+  document.getElementById('groups').setAttribute('aria-busy', String(value));
   for (const id of ['refresh', 'sync-reviews']) {
     const button = document.getElementById(id);
     if (button) button.disabled = value;
@@ -328,7 +350,7 @@ window.addEventListener('storage', (event) => {
     render();
   }
 });
-syncConfig();
+refresh();
 </script>
 </body>
 </html>

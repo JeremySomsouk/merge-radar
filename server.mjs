@@ -67,13 +67,20 @@ async function loadPrs(config) {
   if (!['github', 'repositories'].includes(reviewSource)) throw new Error('Choose a valid review source in Settings.');
   keyword = keyword.replace(/"/g, '').trim();
   const ignoredChecks = ignore.split(',').map((s) => s.trim()).filter(Boolean);
+  const knownPrs = [];
+  const searchOwned = async (filter) => {
+    const prs = await search(keyword, extra, filter);
+    knownPrs.push(...prs);
+    return prs;
+  };
   const [assigned, authored, requested] = await Promise.all([
-    search(keyword, extra, 'assignee:@me'),
-    search(keyword, extra, 'author:@me'),
-    reviewSource === 'repositories' ? findRepositoryReviews(run, config) : search(keyword, extra, 'user-review-requested:@me'),
+    searchOwned('assignee:@me'),
+    searchOwned('author:@me'),
+    reviewSource === 'repositories'
+      ? findRepositoryReviews(run, config).then((targets) => hydrateReviews(run, targets, knownPrs))
+      : search(keyword, extra, 'user-review-requested:@me'),
   ]);
-  const reviews = reviewSource === 'repositories' ? await hydrateReviews(run, requested, [...assigned, ...authored]) : requested;
-  return preparePrs({ assigned, authored, requested: reviews }, ignoredChecks);
+  return preparePrs({ assigned, authored, requested }, ignoredChecks);
 }
 
 function syncPrs(config) {
