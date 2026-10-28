@@ -1,0 +1,12 @@
+.superpowers/
+.remember/
+node_modules/
+.DS_Store
+config.json
+.env
+.env.*
+*.pem
+*.key
+*.log
+.idea/
+.vscode/

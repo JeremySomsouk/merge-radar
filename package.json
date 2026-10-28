@@ -1,0 +1,13 @@
+{
+  "name": "merge-radar",
+  "version": "0.1.0",
+  "description": "Local dashboard of your open GitHub pull requests, sorted by what is blocking each merge",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test"
+  }
+}
