@@ -8,6 +8,10 @@ const run = promisify(execFile);
 const PORT = Number(process.env.PORT ?? 4747);
 const CONFIG = new URL('./config.json', import.meta.url);
 const EXAMPLE_CONFIG = new URL('./config.example.json', import.meta.url);
+const ASSETS = new Map([
+  ['/assets/logo.png', new URL('./assets/logo.png', import.meta.url)],
+  ['/favicon.png', new URL('./assets/favicon.png', import.meta.url)],
+]);
 const QUERY = `query($q: String!) { search(query: $q, type: ISSUE, first: 50) { nodes { ${PR_FIELDS} } } }`;
 
 async function search(keyword, extra, filter) {
@@ -45,6 +49,11 @@ async function loadPrs({ keyword, extra, ignore }) {
 createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://localhost');
+    if (ASSETS.has(url.pathname)) {
+      const image = await readFile(ASSETS.get(url.pathname));
+      res.writeHead(200, { 'content-type': 'image/png' });
+      return res.end(image);
+    }
     if (url.pathname === '/api/prs') {
       res.writeHead(200, { 'content-type': 'application/json' });
       return res.end(JSON.stringify(await loadPrs(await loadConfig())));

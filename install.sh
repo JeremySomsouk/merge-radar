@@ -34,7 +34,8 @@ EOF
 
 rm -rf "$APP"
 osacompile -o "$APP" -e "open location \"http://localhost:$PORT\""
-for kv in "CFBundleIdentifier:$BUNDLE_ID" "CFBundleName:Merge Radar" "CFBundleDisplayName:Merge Radar"; do
+cp "$DIR/assets/app-icon.icns" "$APP/Contents/Resources/app-icon.icns"
+for kv in "CFBundleIdentifier:$BUNDLE_ID" "CFBundleName:Merge Radar" "CFBundleDisplayName:Merge Radar" "CFBundleIconFile:app-icon.icns"; do
   /usr/libexec/PlistBuddy -c "Delete :${kv%%:*}" "$APP/Contents/Info.plist" 2>/dev/null || true
   /usr/libexec/PlistBuddy -c "Add :${kv%%:*} string ${kv#*:}" "$APP/Contents/Info.plist"
 done

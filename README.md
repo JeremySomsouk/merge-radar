@@ -48,6 +48,8 @@ Run these commands from the project folder after completing the setup above. Sto
 
 The agent keeps the server running in the background (logs go to `~/Library/Logs/merge-radar.log`). Open the dashboard with "Merge Radar" from Spotlight. Run `./install.sh` again if you move the project folder. The login installer is macOS-only; on Linux, start the server manually with `npm start`.
 
+The app icon matches the logo and browser-tab icon in the dashboard. If you installed an earlier version, rerun `./install.sh` to update the app icon.
+
 ## Settings
 
 The app works with the defaults immediately. To customize them, copy `config.example.json` to `config.json` (git-ignored), or click **Settings** in the page, which writes `config.json` for you. "Reset to defaults" copies the example file back.
