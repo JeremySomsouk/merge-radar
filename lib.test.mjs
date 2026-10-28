@@ -48,3 +48,54 @@ test('bot-authored PRs are bot, others are mine', () => {
 });
 
 test('dedupe by url', () => assert.equal(dedupe([pr(), pr()]).length, 1));
+
+test('a direct review request takes priority over merge status and authorship', () => {
+  const result = classify(pr({ author: { __typename: 'Bot' } }), [], true);
+  assert.equal(result.source, 'review');
+  assert.equal(result.lane, 'review');
+  assert.equal(result.links.review, 'https://github.com/o/r/pull/1/files');
+});
+
+test('draft review requests stay in drafts', () => {
+  const result = classify(pr({ isDraft: true }), [], true);
+  assert.equal(result.source, 'review');
+  assert.equal(result.lane, 'draft');
+});
+
+test('quick actions link to the first failure and unresolved thread', () => {
+  const result = classify(pr({
+    commits: checks(
+      { __typename: 'CheckRun', name: 'optional', status: 'COMPLETED', conclusion: 'FAILURE', detailsUrl: 'ignored' },
+      { __typename: 'StatusContext', context: 'unit', state: 'FAILURE', targetUrl: 'first-failure' },
+      { __typename: 'StatusContext', context: 'integration', state: 'FAILURE', targetUrl: 'second-failure' },
+    ),
+    reviewThreads: { nodes: [
+      { isResolved: true, comments: { nodes: [{ url: 'resolved' }] } },
+      { isResolved: false, comments: { nodes: [{ url: 'feedback' }] } },
+    ] },
+  }), ['optional']);
+  assert.equal(result.links.failedCheck, 'first-failure');
+  assert.equal(result.links.feedback, 'feedback');
+});
+
+test('quick actions have safe GitHub fallbacks when details are missing', () => {
+  const result = classify(pr({
+    commits: checks({ __typename: 'StatusContext', context: 'ci', state: 'FAILURE' }),
+    reviewThreads: { nodes: [{ isResolved: false, comments: { nodes: [] } }] },
+  }));
+  assert.equal(result.links.failedCheck, `${result.url}/checks`);
+  assert.equal(result.links.feedback, `${result.url}/files`);
+  assert.equal(classify(pr({ reviewDecision: 'CHANGES_REQUESTED' })).links.feedback, pr().url);
+  assert.equal(classify(pr()).links.failedCheck, null);
+  assert.equal(classify(pr()).links.feedback, null);
+});
+
+test('overlapping searches produce one card while preserving review requests', async () => {
+  const { preparePrs } = await import('./lib.mjs');
+  const other = pr({ url: 'https://github.com/o/r/pull/2', updatedAt: '2026-10-29T00:00:00Z' });
+  const results = preparePrs({ assigned: [pr()], authored: [pr(), other], requested: [pr()] });
+  assert.equal(results.length, 2);
+  assert.equal(results[0].url, other.url);
+  assert.equal(results[1].source, 'review');
+  assert.equal(results[1].lane, 'review');
+});

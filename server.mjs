@@ -2,15 +2,16 @@ import { createServer } from 'node:http';
 import { execFile } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
-import { PR_FIELDS, classify, dedupe } from './lib.mjs';
+import { PR_FIELDS, preparePrs } from './lib.mjs';
 
 const run = promisify(execFile);
 const PORT = Number(process.env.PORT ?? 4747);
 const CONFIG = new URL('./config.json', import.meta.url);
 const EXAMPLE_CONFIG = new URL('./config.example.json', import.meta.url);
 const ASSETS = new Map([
-  ['/assets/logo.png', new URL('./assets/logo.png', import.meta.url)],
-  ['/favicon.png', new URL('./assets/favicon.png', import.meta.url)],
+  ['/assets/logo.png', ['assets/logo.png', 'image/png']],
+  ['/favicon.png', ['assets/favicon.png', 'image/png']],
+  ['/ui-state.mjs', ['ui-state.mjs', 'text/javascript']],
 ]);
 const QUERY = `query($q: String!) { search(query: $q, type: ISSUE, first: 50) { nodes { ${PR_FIELDS} } } }`;
 
@@ -40,19 +41,22 @@ async function readBody(req) {
 async function loadPrs({ keyword, extra, ignore }) {
   keyword = keyword.replace(/"/g, '').trim();
   const ignoredChecks = ignore.split(',').map((s) => s.trim()).filter(Boolean);
-  const [assigned, authored] = await Promise.all([search(keyword, extra, 'assignee:@me'), search(keyword, extra, 'author:@me')]);
-  return dedupe([...assigned, ...authored])
-    .map((pr) => classify(pr, ignoredChecks))
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  const [assigned, authored, requested] = await Promise.all([
+    search(keyword, extra, 'assignee:@me'),
+    search(keyword, extra, 'author:@me'),
+    search(keyword, extra, 'user-review-requested:@me'),
+  ]);
+  return preparePrs({ assigned, authored, requested }, ignoredChecks);
 }
 
 createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://localhost');
     if (ASSETS.has(url.pathname)) {
-      const image = await readFile(ASSETS.get(url.pathname));
-      res.writeHead(200, { 'content-type': 'image/png' });
-      return res.end(image);
+      const [file, contentType] = ASSETS.get(url.pathname);
+      const body = await readFile(new URL(file, import.meta.url));
+      res.writeHead(200, { 'content-type': contentType });
+      return res.end(body);
     }
     if (url.pathname === '/api/prs') {
       res.writeHead(200, { 'content-type': 'application/json' });

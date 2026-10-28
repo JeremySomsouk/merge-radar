@@ -2,18 +2,31 @@
 
 A local dashboard of your open GitHub pull requests, sorted by what is blocking each merge.
 
-![Merge Radar dashboard showing pull requests grouped into Needs me, Waiting on others, and Ready to merge, with a separate section for bot-authored PRs](docs/images/dashboard.png)
+![Merge Radar dashboard showing review requests, merge blockers, and quick actions for each pull request](docs/images/dashboard.png)
 
 *Example dashboard with fictional repositories and pull requests.*
 
-Merge Radar collects the PRs you authored or are assigned to and puts each one in a lane:
+Merge Radar collects PRs you authored, are assigned to, or have been directly asked to review:
 
+- **Needs my review**: direct review requests, shown first with a link to the changed files.
 - **Needs me**: merge conflict, failed CI, unresolved review threads, or changes requested.
 - **Waiting on others**: CI running, review required, or branch protection pending.
 - **Ready to merge**: no blockers detected in the fetched data.
 - **Drafts**: collapsed, out of the way.
 
 PRs opened by bots (for example an automation app that assigns PRs to you) are shown in their own section. The "Opened by me" section includes all other results, including PRs authored by another person and assigned to you. Blockers link to the relevant GitHub page, with a direct link to a failing check or unresolved thread when available. Merge Radar never writes to GitHub.
+
+Direct review requests use GitHub's [`user-review-requested:@me` filter](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/filtering-and-searching-issues-and-pull-requests). Team-only requests are excluded. A PR that is both assigned to you and awaiting your review appears once, in "Needs my review". Draft review requests stay collapsed. Your title keyword and extra filters apply to all sections.
+
+## Card actions
+
+- **Review changes** opens the files changed in a PR awaiting your review.
+- **Open failing check** opens the first non-ignored failed check, when present.
+- **View feedback** opens the first unresolved thread, or the PR discussion when changes were requested.
+- **Copy review request** copies a short message with the repository, PR number, title, and URL. Paste it into your chat or email when ready; the app does not send it.
+- **Snooze until tomorrow** hides a PR from active sections and counts until 9 a.m. the next day in your browser's local timezone. Expand **Snoozed** to view it or choose **Restore** to bring it back early. Snoozes survive reloads in the same browser and automatically expire while the page is open.
+
+Snoozing only affects this browser's dashboard. Other browsers or a different local port have separate snooze settings. "Copy links" excludes snoozed PRs.
 
 ## Requirements
 
@@ -67,21 +80,22 @@ Each lane in "Waiting on others" and "Ready to merge" has a **Copy links** butto
 
 ## Privacy
 
-The server listens only on `127.0.0.1`. The browser loads its assets from the local server, and the server calls GitHub through your existing `gh` login. The app has no analytics or third-party scripts and does not save PR responses to disk. Settings are saved locally in `config.json`; GitHub CLI manages your credentials separately.
+The server listens only on `127.0.0.1`. The browser loads its assets from the local server, and the server calls GitHub through your existing `gh` login. The app has no analytics or third-party scripts and does not save PR responses to disk. Settings are saved locally in `config.json`; GitHub CLI manages your credentials separately. Snoozed PR URLs and wake-up times are stored in your browser's local storage, with no titles or PR contents.
 
 Local settings, session artifacts, environment files, keys, and logs are excluded by `.gitignore`. Keep organization names, team filters, and repository-specific settings in `config.json`; use generic values in `config.example.json`. Review screenshots and copied PR links before sharing them because they can contain private repository names and PR titles.
 
 ## Limitations and troubleshooting
 
-- Each refresh fetches up to 50 authored and 50 assigned PRs, then removes duplicates. It reads up to 100 checks on the latest commit and 100 review threads per PR, without pagination.
+- Each refresh fetches up to 50 authored PRs, 50 assigned PRs, and 50 direct review requests, then removes duplicates. It reads up to 100 checks on the latest commit and 100 review threads per PR, without pagination.
 - "Ready to merge" is advisory. Confirm the current checks, approvals, and repository rules on GitHub before merging. Ignored checks do not count as blockers in this dashboard.
 - If authentication fails or a private repository is missing, run `gh auth status` and check that your CLI account has access, including any required organization SSO authorization.
 - If the port is already in use, stop the existing server or set a different `PORT`. If the macOS login agent fails to start, check `~/Library/Logs/merge-radar.log` and rerun `./install.sh` with Node.js and `gh` available in your terminal.
 
 ## How it works
 
-- `server.mjs` serves the page and `/api/prs`, which runs two `gh api graphql` searches (`author:@me` and `assignee:@me`).
+- `server.mjs` serves the page and `/api/prs`, which runs three `gh api graphql` searches (`author:@me`, `assignee:@me`, and `user-review-requested:@me`).
 - `lib.mjs` classifies each PR into a lane. It is pure and covered by `lib.test.mjs`.
+- `ui-state.mjs` handles local snooze expiry and review-request text, covered by `ui-state.test.mjs`.
 - `index.html` is the whole UI, with no build step and no dependencies.
 
 ## License

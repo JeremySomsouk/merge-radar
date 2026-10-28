@@ -8,12 +8,12 @@
 <style>
   :root {
     --bg: #f4f5f7; --lane: #eaecf0; --card: #fff; --fg: #1f2328; --muted: #656d76; --border: #d8dee4;
-    --me: #cf222e; --me-soft: #ffebe9; --others: #9a6700; --others-soft: #fff8c5; --ready: #1a7f37; --ready-soft: #dafbe1; --draft: #656d76; --draft-soft: #eaeef2;
+    --me: #cf222e; --me-soft: #ffebe9; --others: #9a6700; --others-soft: #fff8c5; --ready: #1a7f37; --ready-soft: #dafbe1; --review: #8250df; --review-soft: #f3edff; --draft: #656d76; --draft-soft: #eaeef2;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #0d1117; --lane: #161b22; --card: #1c2128; --fg: #e6edf3; --muted: #8d96a0; --border: #30363d;
-      --me: #ff7b72; --me-soft: #3d1a1a; --others: #e3b341; --others-soft: #3a2e0f; --ready: #56d364; --ready-soft: #12301b; --draft: #8d96a0; --draft-soft: #262c36;
+      --me: #ff7b72; --me-soft: #3d1a1a; --others: #e3b341; --others-soft: #3a2e0f; --ready: #56d364; --ready-soft: #12301b; --review: #d2a8ff; --review-soft: #27163d; --draft: #8d96a0; --draft-soft: #262c36;
     }
   }
   * { box-sizing: border-box; }
@@ -21,7 +21,7 @@
   header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; gap: 12px; flex-wrap: wrap; }
   h1 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 20px; letter-spacing: -0.01em; }
   .brand-icon { width: 44px; height: 44px; flex: none; }
-  .summary { display: flex; gap: 8px; }
+  .summary { display: flex; flex-wrap: wrap; gap: 8px; }
   .pill { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; }
   .status { color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 8px; }
   button { font: inherit; font-size: 12px; color: var(--fg); background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
@@ -40,8 +40,8 @@
   details.drafts { margin-top: 12px; }
   details.drafts summary { cursor: pointer; color: var(--muted); font-size: 13px; font-weight: 600; margin-bottom: 10px; }
   details.drafts .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 0 12px; }
-  a.pill { text-decoration: none; cursor: pointer; }
-  a.pill:hover { filter: brightness(0.95); }
+  .pill { border: 0; cursor: pointer; }
+  .pill:hover { filter: brightness(0.95); }
   .lane { background: var(--lane); border-radius: 10px; padding: 12px; }
   .lane h2 { display: flex; align-items: center; gap: 8px; font-size: 14px; margin: 0 0 12px; }
   .dot { width: 10px; height: 10px; border-radius: 50%; }
@@ -54,6 +54,14 @@
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .chip { font-size: 12px; font-weight: 500; padding: 2px 8px; border-radius: 6px; text-decoration: none; }
   .chip:hover { filter: brightness(0.95); text-decoration: underline; }
+  .card-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  .card-actions a { font-size: 12px; color: var(--fg); background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; text-decoration: none; }
+  .card-actions a:hover { border-color: var(--muted); }
+  .review-cards, .snoozed .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr)); gap: 12px; }
+  .review-cards .card, .snoozed .card { margin-bottom: 0; }
+  .review-count { color: var(--review); background: var(--review-soft); border-radius: 999px; padding: 2px 7px; margin-left: 6px; }
+  .empty-state, .wake-time { color: var(--muted); font-size: 12px; }
+  .snoozed summary { cursor: pointer; color: var(--muted); font-weight: 600; margin-bottom: 12px; }
   .error { color: var(--me); background: var(--me-soft); border-radius: 8px; padding: 10px; margin-bottom: 16px; white-space: pre-wrap; }
   .error:empty { display: none; }
   .settings { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px 20px; align-items: end; }
@@ -69,52 +77,85 @@
 <header>
   <h1><img class="brand-icon" src="/assets/logo.png" width="44" height="44" alt="">Merge Radar</h1>
   <div class="summary" id="summary"></div>
-  <div class="status"><span id="status">Loading...</span><button onclick="refresh()">Refresh</button><button onclick="toggleSettings()">Settings</button></div>
+  <div class="status"><span id="status">Loading...</span><button id="refresh" type="button">Refresh</button><button id="toggle-settings" type="button">Settings</button></div>
 </header>
-<form class="settings" id="settings" hidden onsubmit="saveSettings(event)">
+<form class="settings" id="settings" hidden>
   <label>Title keyword (optional)<input name="keyword" placeholder="e.g. TEAM"></label>
   <label>Extra GitHub filters <input name="extra" placeholder="e.g. repo:owner/repo -label:wip"></label>
   <label>Ignored checks (comma-separated, partial names)<input name="ignore" placeholder="e.g. codecov/patch"></label>
   <label>First section<select name="first"><option value="mine">Opened by me</option><option value="bot">Opened by bots</option></select></label>
   <label>Refresh every (minutes)<input name="minutes" type="number" min="1" max="60" required></label>
   <label>Mark idle after (days)<input name="idleDays" type="number" min="1" max="90" required></label>
-  <div class="actions"><button class="primary" type="submit">Save</button><button type="button" onclick="resetSettings()">Reset to defaults</button></div>
+  <div class="actions"><button class="primary" type="submit">Save</button><button id="reset-settings" type="button">Reset to defaults</button></div>
 </form>
-<div id="error" class="error"></div>
+<div id="error" class="error" role="alert"></div>
 <div id="groups"></div>
-<script>
+<script type="module">
+import { nextMorning, readSnoozes, reviewRequestText } from '/ui-state.mjs';
+
 const LANES = [['me', 'Needs me'], ['others', 'Waiting on others'], ['ready', 'Ready to merge']];
 const COPYABLE = new Set(['others', 'ready']);
 const GROUP_TITLES = { mine: 'Opened by me', bot: 'Opened by bots' };
+const SNOOZE_KEY = 'merge-radar:snoozes';
 let settings;
 let timer;
+let wakeTimer;
 let lastPrs = [];
+let snoozes = loadSnoozes();
 
-async function copyLinks(button, source, lane) {
-  const text = lastPrs.filter((p) => p.source === source && p.lane === lane).map((p) => `- ${p.title}: ${p.url}`).join('\n');
+function loadSnoozes() {
+  try { return readSnoozes(localStorage.getItem(SNOOZE_KEY)); }
+  catch { return {}; }
+}
+
+function updateSnooze(url, until) {
+  try {
+    const next = loadSnoozes();
+    if (until) next[url] = until;
+    else delete next[url];
+    localStorage.setItem(SNOOZE_KEY, JSON.stringify(next));
+    snoozes = next;
+    render();
+  } catch {
+    document.getElementById('error').textContent = 'Could not save snooze settings. Allow local storage in your browser and try again.';
+  }
+}
+
+async function copyText(button, text) {
+  const label = button.textContent;
   try {
     await navigator.clipboard.writeText(text);
     button.textContent = 'Copied';
   } catch {
     button.textContent = 'Copy failed';
   }
-  setTimeout(() => { button.textContent = 'Copy links'; }, 1500);
+  setTimeout(() => { button.textContent = label; }, 1500);
+}
+
+function copyLinks(button, source, lane) {
+  const text = lastPrs.filter((p) => p.source === source && p.lane === lane && !(snoozes[p.url] > Date.now()))
+    .map((p) => `- ${p.title}: ${p.url}`).join('\n');
+  return copyText(button, text);
 }
 
 async function syncConfig(options) {
-  const res = await fetch('/api/config', options);
-  if (!res.ok) throw new Error(await res.text());
-  applySettings(await res.json());
-}
-function applySettings(next) {
-  settings = next;
-  clearInterval(timer);
-  timer = setInterval(refresh, settings.minutes * 60 * 1000);
-  refresh();
+  try {
+    const res = await fetch('/api/config', options);
+    if (!res.ok) throw new Error(await res.text());
+    settings = await res.json();
+    clearInterval(timer);
+    timer = setInterval(refresh, settings.minutes * 60 * 1000);
+    await refresh();
+  } catch (err) {
+    document.getElementById('error').textContent = err.message;
+  }
 }
 function toggleSettings() {
+  if (!settings) return;
   const form = document.getElementById('settings');
-  for (const [k, v] of Object.entries(settings)) form.elements[k].value = v;
+  for (const [k, v] of Object.entries(settings)) {
+    if (form.elements[k]) form.elements[k].value = v;
+  }
   form.hidden = !form.hidden;
 }
 function saveSettings(event) {
@@ -127,29 +168,39 @@ function resetSettings() {
   document.getElementById('settings').hidden = true;
   syncConfig({ method: 'DELETE' });
 }
-const esc =(s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const ago = (d) => { const h = Math.round((Date.now() - new Date(d)) / 36e5); return h < 1 ? 'just now' : h < 24 ? `${h}h ago` : `${Math.round(h / 24)}d ago`; };
-
 const idleDays = (d) => Math.floor((Date.now() - new Date(d)) / 864e5);
+const actionLink = (url, label) => url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${label}</a>` : '';
+
 const card = (p, key) => {
   const idle = idleDays(p.updatedAt);
   const stale = idle >= settings.idleDays;
+  const until = snoozes[p.url];
   return `
-  <div class="card${stale ? ' stale' : ''}" style="border-left-color:var(--${key})">
-    <a class="title" href="${esc(p.url)}" target="_blank">${esc(p.title)}</a>
+  <div class="card${stale ? ' stale' : ''}" data-pr-url="${esc(p.url)}" style="border-left-color:var(--${key})">
+    <a class="title" href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">${esc(p.title)}</a>
     <div class="meta"><span class="repo">${esc(p.repo.split('/').pop())}</span>#${p.number} · ${ago(p.updatedAt)}</div>
-    <div class="chips">${stale ? `<span class="chip idle">Idle ${idle}d</span>` : ''}${p.blockers.map((b) => `<a class="chip" style="color:var(--${key});background:var(--${key}-soft)" href="${esc(b.url)}" target="_blank">${esc(b.label)}</a>`).join('')}</div>
+    <div class="chips">${stale ? `<span class="chip idle">Idle ${idle}d</span>` : ''}${p.blockers.map((b) => `<a class="chip" style="color:var(--${key});background:var(--${key}-soft)" href="${esc(b.url)}" target="_blank" rel="noopener noreferrer">${esc(b.label)}</a>`).join('')}</div>
+    ${until ? `<p class="wake-time">Snoozed until ${esc(new Date(until).toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' }))}</p>` : ''}
+    <div class="card-actions">
+      ${p.source === 'review' ? actionLink(p.links.review, 'Review changes') : ''}
+      ${actionLink(p.links.failedCheck, 'Open failing check')}
+      ${actionLink(p.links.feedback, 'View feedback')}
+      <button type="button" data-action="copy-review">Copy review request</button>
+      <button type="button" data-action="${until ? 'restore' : 'snooze'}">${until ? 'Restore' : 'Snooze until tomorrow'}</button>
+    </div>
   </div>`;
 };
 
 const lane = (source, key, label, items) => `
   <section class="lane${items.length ? '' : ' is-empty'}" data-lane="${key}">
-    <h2><span class="dot" style="background:var(--${key})"></span>${label}<span class="count">${items.length}</span>${items.length && COPYABLE.has(key) ? `<button onclick="copyLinks(this, '${source}', '${key}')">Copy links</button>` : ''}</h2>
+    <h2><span class="dot" style="background:var(--${key})"></span>${label}<span class="count">${items.length}</span>${items.length && COPYABLE.has(key) ? `<button type="button" data-action="copy-links" data-source="${source}" data-lane="${key}">Copy links</button>` : ''}</h2>
     ${items.map((p) => card(p, key)).join('')}
   </section>`;
 
-const drafts = (items) => items.length ? `
-  <details class="drafts" data-lane="draft">
+const drafts = (source, items) => items.length ? `
+  <details class="drafts" id="drafts-${source}" data-lane="draft">
     <summary>Drafts (${items.length})</summary>
     <div class="cards">${items.map((p) => card(p, 'draft')).join('')}</div>
   </details>` : '';
@@ -161,31 +212,83 @@ function jumpTo(key) {
   el.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
+function render() {
+  if (!settings) return;
+  snoozes = readSnoozes(JSON.stringify(snoozes));
+  clearTimeout(wakeTimer);
+  const nextWake = Math.min(...Object.values(snoozes));
+  if (Number.isFinite(nextWake)) wakeTimer = setTimeout(render, Math.min(Math.max(1, nextWake - Date.now()), 2147483647));
+  const prs = lastPrs.filter((p) => !snoozes[p.url]);
+  const sleeping = lastPrs.filter((p) => snoozes[p.url]);
+  const count = (key) => key === 'snoozed' ? sleeping.length : prs.filter((p) => p.lane === key).length;
+  document.getElementById('summary').innerHTML = [['review', 'Needs my review'], ...LANES, ['draft', 'Drafts'], ['snoozed', 'Snoozed']]
+    .filter(([key]) => count(key)).map(([key, label]) =>
+      `<button type="button" class="pill" data-jump="${key}" style="color:var(--${key === 'snoozed' ? 'draft' : key});background:var(--${key === 'snoozed' ? 'draft' : key}-soft)">${count(key)} ${label.toLowerCase()}</button>`).join('');
+  const openDetails = new Set([...document.querySelectorAll('details[open]')].map((el) => el.id));
+  const requested = prs.filter((p) => p.lane === 'review');
+  const reviewSection = `
+    <section class="group" data-lane="review">
+      <h3>Needs my review <span class="review-count">${requested.length}</span></h3>
+      ${requested.length ? `<div class="review-cards">${requested.map((p) => card(p, 'review')).join('')}</div>` : '<p class="empty-state">No PRs are waiting for your review.</p>'}
+      ${drafts('review', prs.filter((p) => p.source === 'review' && p.lane === 'draft'))}
+    </section>`;
+  const order = settings.first === 'bot' ? ['bot', 'mine'] : ['mine', 'bot'];
+  document.getElementById('groups').innerHTML = reviewSection + order.map((source) => `
+    <div class="group">
+      <h3>${GROUP_TITLES[source]}</h3>
+      <div class="lanes">${LANES.map(([key, label]) => lane(source, key, label, prs.filter((p) => p.source === source && p.lane === key))).join('')}</div>
+      ${drafts(source, prs.filter((p) => p.source === source && p.lane === 'draft'))}
+    </div>`).join('') + (sleeping.length ? `
+    <details class="snoozed" id="snoozed" data-lane="snoozed">
+      <summary>Snoozed (${sleeping.length})</summary>
+      <div class="cards">${sleeping.map((p) => card(p, p.lane)).join('')}</div>
+    </details>` : '');
+  for (const id of openDetails) {
+    const el = document.getElementById(id);
+    if (el) el.open = true;
+  }
+}
+
 async function refresh() {
   document.getElementById('status').textContent = 'Refreshing...';
   try {
     const res = await fetch('/api/prs');
     if (!res.ok) throw new Error(await res.text());
-    const prs = await res.json();
+    lastPrs = await res.json();
     document.getElementById('error').textContent = '';
-    lastPrs = prs;
-    const count = (key) => prs.filter((p) => p.lane === key).length;
-    document.getElementById('summary').innerHTML = [...LANES, ['draft', 'Drafts']].filter(([key]) => count(key)).map(([key, label]) =>
-      `<a class="pill" onclick="jumpTo('${key}')" style="color:var(--${key});background:var(--${key}-soft)">${count(key)} ${label.toLowerCase()}</a>`).join('');
-    const order = settings.first === 'bot' ? ['bot', 'mine'] : ['mine', 'bot'];
-    document.getElementById('groups').innerHTML = order.map((source) => `
-      <div class="group">
-        <h3>${GROUP_TITLES[source]}</h3>
-        <div class="lanes">${LANES.map(([key, label]) => lane(source, key, label, prs.filter((p) => p.source === source && p.lane === key))).join('')}</div>
-        ${drafts(prs.filter((p) => p.source === source && p.lane === 'draft'))}
-      </div>`).join('');
+    render();
     document.getElementById('status').textContent = `Updated ${new Date().toLocaleTimeString()}`;
   } catch (err) {
     document.getElementById('error').textContent = err.message;
     document.getElementById('status').textContent = 'Failed';
   }
 }
-syncConfig().catch((err) => { document.getElementById('error').textContent = err.message; });
+
+document.getElementById('refresh').addEventListener('click', refresh);
+document.getElementById('toggle-settings').addEventListener('click', toggleSettings);
+document.getElementById('settings').addEventListener('submit', saveSettings);
+document.getElementById('reset-settings').addEventListener('click', resetSettings);
+document.getElementById('summary').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-jump]');
+  if (button) jumpTo(button.dataset.jump);
+});
+document.getElementById('groups').addEventListener('click', (event) => {
+  const button = event.target.closest('button[data-action]');
+  if (!button) return;
+  if (button.dataset.action === 'copy-links') return copyLinks(button, button.dataset.source, button.dataset.lane);
+  const pr = lastPrs.find((p) => p.url === button.closest('[data-pr-url]')?.dataset.prUrl);
+  if (!pr) return;
+  if (button.dataset.action === 'copy-review') copyText(button, reviewRequestText(pr));
+  if (button.dataset.action === 'snooze') updateSnooze(pr.url, nextMorning());
+  if (button.dataset.action === 'restore') updateSnooze(pr.url);
+});
+window.addEventListener('storage', (event) => {
+  if (event.key === SNOOZE_KEY || event.key === null) {
+    snoozes = loadSnoozes();
+    render();
+  }
+});
+syncConfig();
 </script>
 </body>
 </html>
