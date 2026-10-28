@@ -2,7 +2,7 @@ const FAILED = new Set(['FAILURE', 'ERROR', 'TIMED_OUT', 'CANCELLED', 'ACTION_RE
 const PENDING = new Set(['PENDING', 'EXPECTED', 'QUEUED', 'IN_PROGRESS', 'WAITING', 'REQUESTED']);
 export const PR_FIELDS = `
   ... on PullRequest {
-    number title url isDraft updatedAt mergeable reviewDecision mergeStateStatus
+    number title url state isDraft updatedAt mergeable reviewDecision mergeStateStatus
     repository { nameWithOwner }
     author { __typename }
     commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes {

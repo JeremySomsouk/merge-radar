@@ -3,6 +3,7 @@ import { execFile } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import { PR_FIELDS, preparePrs } from './lib.mjs';
+import { findRepositoryReviews, hydrateReviews } from './reviews.mjs';
 
 const run = promisify(execFile);
 const PORT = Number(process.env.PORT ?? 4747);
@@ -14,6 +15,7 @@ const ASSETS = new Map([
   ['/ui-state.mjs', ['ui-state.mjs', 'text/javascript']],
 ]);
 const QUERY = `query($q: String!) { search(query: $q, type: ISSUE, first: 50) { nodes { ${PR_FIELDS} } } }`;
+const pendingLoads = new Map();
 
 async function search(keyword, extra, filter) {
   const title = keyword ? `"${keyword}" in:title` : '';
@@ -38,15 +40,24 @@ async function readBody(req) {
   return JSON.parse(body);
 }
 
-async function loadPrs({ keyword, extra, ignore }) {
+async function loadPrs(config) {
+  let { keyword, extra, ignore, reviewSource } = config;
+  if (!['github', 'repositories'].includes(reviewSource)) throw new Error('Choose a valid review source in Settings.');
   keyword = keyword.replace(/"/g, '').trim();
   const ignoredChecks = ignore.split(',').map((s) => s.trim()).filter(Boolean);
   const [assigned, authored, requested] = await Promise.all([
     search(keyword, extra, 'assignee:@me'),
     search(keyword, extra, 'author:@me'),
-    search(keyword, extra, 'user-review-requested:@me'),
+    reviewSource === 'repositories' ? findRepositoryReviews(run, config) : search(keyword, extra, 'user-review-requested:@me'),
   ]);
-  return preparePrs({ assigned, authored, requested }, ignoredChecks);
+  const reviews = reviewSource === 'repositories' ? await hydrateReviews(run, requested, [...assigned, ...authored]) : requested;
+  return preparePrs({ assigned, authored, requested: reviews }, ignoredChecks);
+}
+
+function syncPrs(config) {
+  const key = JSON.stringify(config);
+  if (!pendingLoads.has(key)) pendingLoads.set(key, loadPrs(config).finally(() => pendingLoads.delete(key)));
+  return pendingLoads.get(key);
 }
 
 createServer(async (req, res) => {
@@ -59,8 +70,9 @@ createServer(async (req, res) => {
       return res.end(body);
     }
     if (url.pathname === '/api/prs') {
+      const prs = await syncPrs(await loadConfig());
       res.writeHead(200, { 'content-type': 'application/json' });
-      return res.end(JSON.stringify(await loadPrs(await loadConfig())));
+      return res.end(JSON.stringify(prs));
     }
     if (url.pathname === '/api/config') {
       // Requiring a JSON content type forces a CORS preflight, so other sites cannot write the config.
@@ -69,11 +81,13 @@ createServer(async (req, res) => {
       } else if (req.method === 'DELETE') {
         await writeFile(CONFIG, await readFile(EXAMPLE_CONFIG));
       }
+      const config = await loadConfig();
       res.writeHead(200, { 'content-type': 'application/json' });
-      return res.end(JSON.stringify(await loadConfig()));
+      return res.end(JSON.stringify(config));
     }
+    const page = await readFile(new URL('./index.html', import.meta.url));
     res.writeHead(200, { 'content-type': 'text/html' });
-    res.end(await readFile(new URL('./index.html', import.meta.url)));
+    res.end(page);
   } catch (err) {
     res.writeHead(500, { 'content-type': 'text/plain' });
     res.end(String(err.stderr || err.message));

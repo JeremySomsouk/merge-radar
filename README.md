@@ -8,7 +8,7 @@ A local dashboard of your open GitHub pull requests, sorted by what is blocking 
 
 Merge Radar collects PRs you authored, are assigned to, or have been directly asked to review:
 
-- **Needs my review**: direct review requests, shown first with a link to the changed files.
+- **Needs my review**: personal or configured-team review requests, shown first with a link to the changed files.
 - **Needs me**: merge conflict, failed CI, unresolved review threads, or changes requested.
 - **Waiting on others**: CI running, review required, or branch protection pending.
 - **Ready to merge**: no blockers detected in the fetched data.
@@ -16,7 +16,18 @@ Merge Radar collects PRs you authored, are assigned to, or have been directly as
 
 PRs opened by bots (for example an automation app that assigns PRs to you) are shown in their own section. The "Opened by me" section includes all other results, including PRs authored by another person and assigned to you. Blockers link to the relevant GitHub page, with a direct link to a failing check or unresolved thread when available. Merge Radar never writes to GitHub.
 
-Direct review requests use GitHub's [`user-review-requested:@me` filter](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/filtering-and-searching-issues-and-pull-requests). Team-only requests are excluded. A PR that is both assigned to you and awaiting your review appears once, in "Needs my review". Draft review requests stay collapsed. Your title keyword and extra filters apply to all sections.
+A PR that is both assigned to you and awaiting your review appears once, in "Needs my review". Use **Sync reviews** to refresh immediately, or let the normal auto-refresh keep the list current.
+
+## Review sources
+
+Choose a **Review source** in Settings:
+
+- **Direct requests across GitHub** (default) uses [`user-review-requested:@me`](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/filtering-and-searching-issues-and-pull-requests). It excludes team-only requests, applies your title keyword and extra filters, and keeps draft requests collapsed.
+- **My repositories and teams** follows the selection logic used by `prctrl`: list every page of open PRs in your configured repositories, then match your GitHub username against `requested_reviewers` or a configured team against `requested_teams`. It excludes your own PRs, drafts, configured title prefixes, and PRs older than the configured age.
+
+For repository mode, enter repositories as `owner/repository` and teams as `owner/team-slug`, separated by commas. Teams are matched only within their organization. The username comes from your active GitHub CLI account. This mode uses its own review scope; the dashboard's title keyword and extra search filters still apply to your authored and assigned PRs but do not hide incoming review requests.
+
+Repository mode runs directly through `gh`, without requiring `prctrl` or reading its credentials. You can reuse the repository, team, age, and excluded-prefix values from your `prctrl` configuration in these settings. They are saved in the ignored `config.json`; changes to your `prctrl` configuration are not imported automatically. Browser snoozes remain specific to Merge Radar.
 
 ## Card actions
 
@@ -75,6 +86,11 @@ The app works with the defaults immediately. To customize them, copy `config.exa
 | First section (`first`: `mine` or `bot`) | Opened by me | Which section comes first |
 | Refresh every (`minutes`) | 3 minutes | Auto refresh interval |
 | Mark idle after (`idleDays`) | 3 days | PRs without updates for this long are faded and tagged |
+| Review source (`reviewSource`) | `github` | Direct GitHub search, or `repositories` for repository and team matching |
+| Review repositories (`reviewRepos`) | none | Comma-separated `owner/repository` names for repository mode |
+| Review teams (`reviewTeams`) | none | Optional comma-separated `owner/team-slug` names for repository mode |
+| Excluded review prefixes (`reviewExcludePrefixes`) | none | Comma-separated title prefixes skipped in repository mode |
+| Maximum review age (`reviewMaxAgeDays`) | 60 days | Maximum age in complete days since creation, for repository mode |
 
 Each lane in "Waiting on others" and "Ready to merge" has a **Copy links** button that copies a Markdown list of its PRs, ready to paste into a chat.
 
@@ -86,14 +102,16 @@ Local settings, session artifacts, environment files, keys, and logs are exclude
 
 ## Limitations and troubleshooting
 
-- Each refresh fetches up to 50 authored PRs, 50 assigned PRs, and 50 direct review requests, then removes duplicates. It reads up to 100 checks on the latest commit and 100 review threads per PR, without pagination.
+- Each refresh searches up to 50 authored and 50 assigned PRs. Direct-review search also stops at 50; repository mode paginates all open PRs in its configured repositories. Both modes read up to 100 checks on the latest commit and 100 review threads per PR, without pagination for those details.
+- Repository mode makes more API calls than search. It limits each batch to eight concurrent requests and shares in-progress syncs across tabs using the same settings. If a repository cannot be read, the refresh shows an error and keeps the previous dashboard instead of silently hiding reviews.
 - "Ready to merge" is advisory. Confirm the current checks, approvals, and repository rules on GitHub before merging. Ignored checks do not count as blockers in this dashboard.
 - If authentication fails or a private repository is missing, run `gh auth status` and check that your CLI account has access, including any required organization SSO authorization.
 - If the port is already in use, stop the existing server or set a different `PORT`. If the macOS login agent fails to start, check `~/Library/Logs/merge-radar.log` and rerun `./install.sh` with Node.js and `gh` available in your terminal.
 
 ## How it works
 
-- `server.mjs` serves the page and `/api/prs`, which runs three `gh api graphql` searches (`author:@me`, `assignee:@me`, and `user-review-requested:@me`).
+- `server.mjs` serves the page and `/api/prs`, which searches authored and assigned PRs and loads reviews from the selected source.
+- `reviews.mjs` paginates repository review requests and fetches their current checks and feedback through GitHub GraphQL.
 - `lib.mjs` classifies each PR into a lane. It is pure and covered by `lib.test.mjs`.
 - `ui-state.mjs` handles local snooze expiry and review-request text, covered by `ui-state.test.mjs`.
 - `index.html` is the whole UI, with no build step and no dependencies.

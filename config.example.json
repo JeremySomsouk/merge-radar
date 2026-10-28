@@ -4,5 +4,10 @@
   "ignore": "",
   "first": "mine",
   "minutes": 3,
-  "idleDays": 3
+  "idleDays": 3,
+  "reviewSource": "github",
+  "reviewRepos": "",
+  "reviewTeams": "",
+  "reviewExcludePrefixes": "",
+  "reviewMaxAgeDays": 60
 }
