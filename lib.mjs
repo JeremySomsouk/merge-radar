@@ -1,17 +1,24 @@
 const FAILED = new Set(['FAILURE', 'ERROR', 'TIMED_OUT', 'CANCELLED', 'ACTION_REQUIRED', 'STARTUP_FAILURE']);
 const PENDING = new Set(['PENDING', 'EXPECTED', 'QUEUED', 'IN_PROGRESS', 'WAITING', 'REQUESTED']);
 export const PR_FIELDS = `
-  ... on PullRequest {
-    number title url state isDraft updatedAt mergeable reviewDecision mergeStateStatus
-    repository { nameWithOwner }
-    author { __typename }
-    commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes {
-      __typename
-      ... on CheckRun { name status conclusion detailsUrl }
-      ... on StatusContext { context state targetUrl }
-    } } } } } }
-    reviewThreads(first: 100) { nodes { isResolved comments(first: 1) { nodes { url } } } }
-  }`;
+  number title url state isDraft updatedAt
+  repository { nameWithOwner }
+  author { __typename }`;
+
+export const MERGE_FIELDS = 'mergeable reviewDecision mergeStateStatus';
+
+export const CHECK_FIELDS = `commits(last: 1) { nodes { commit { statusCheckRollup {
+  contexts(first: $size, after: $after) { pageInfo { hasNextPage endCursor } nodes {
+    __typename
+    ... on CheckRun { name status conclusion detailsUrl }
+    ... on StatusContext { context state targetUrl }
+  } }
+} } } }`;
+
+export const THREAD_FIELDS = `reviewThreads(first: $size, after: $after) {
+  pageInfo { hasNextPage endCursor }
+  nodes { isResolved comments(first: 1) { nodes { url } } }
+}`;
 
 function checkState(c) {
   if (c.__typename === 'StatusContext') return { name: c.context, state: c.state, url: c.targetUrl };

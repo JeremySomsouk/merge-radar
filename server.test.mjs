@@ -62,7 +62,8 @@ if (search) {
 } else {
   fs.writeFileSync('details-started', '');
   const number = args.find(arg => arg.startsWith('number=')).slice(7);
-  console.log(JSON.stringify({ data: { repository: { pullRequest: fixtures.details[number] } } }));
+  const searched = Object.values(fixtures).filter(Array.isArray).flat().find(pr => pr.number === Number(number));
+  console.log(JSON.stringify({ data: { repository: { pullRequest: fixtures.details[number] ?? searched } } }));
 }
 `, { mode: 0o755 });
   // Port zero avoids collisions with the user's running dashboard.

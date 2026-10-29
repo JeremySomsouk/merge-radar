@@ -6,7 +6,16 @@ import { preparePrs } from './lib.mjs';
 import { findRepositoryReviews, hydrateReviews, searchPrs } from './reviews.mjs';
 import { checkReviewNotifications, notifyMac } from './notifications.mjs';
 
-const run = promisify(execFile);
+const execute = promisify(execFile);
+async function run(command, args, options) {
+  try {
+    return await execute(command, args, options);
+  } catch (error) {
+    if (command !== 'gh') throw error;
+    const context = args.filter(arg => /^(q|owner|repo|number)=/.test(arg)).join(' ') || args[1];
+    throw new Error(`GitHub request failed (${context}): ${error.stderr || error.message}`);
+  }
+}
 const PORT = Number(process.env.PORT ?? 4747);
 const CONFIG = new URL('./config.json', import.meta.url);
 const EXAMPLE_CONFIG = new URL('./config.example.json', import.meta.url);

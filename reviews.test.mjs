@@ -76,7 +76,7 @@ test('hydration reuses known PRs and fetches missing ones outside dashboard sear
   const results = await hydrateReviews(run, [{ owner: 'demo', repo: 'app', number: 1 }, { owner: 'demo', repo: 'app', number: 2 }], [known]);
   assert.equal(results.length, 2);
   assert.equal(results[0], known);
-  assert.equal(calls.length, 1);
+  assert.equal(calls.length, 4);
 });
 
 test('hydration drops newly closed or draft PRs and reports inaccessible PRs', async () => {
@@ -91,24 +91,63 @@ test('search loads small pages with cursors and preserves the 50 PR cap', async 
   const { searchPrs } = await import('./reviews.mjs');
   const calls = [];
   const run = async (_cmd, args) => {
+    if (args.some(arg => arg.startsWith('number='))) return { stdout: JSON.stringify({ data: { repository: { pullRequest: { number: Number(args.find(arg => arg.startsWith('number=')).slice(7)), isDraft: true } } } }) };
+    assert.ok(!args.find(arg => arg.startsWith('query=')).includes('statusCheckRollup'));
     const size = Number(args.find(arg => arg.startsWith('size=')).slice(5));
     assert.ok(size <= 5);
     const cursor = args.find(arg => arg.startsWith('after='))?.slice(6);
     assert.equal(cursor, calls.length ? String(calls.length * 5) : undefined);
     calls.push(args);
     return { stdout: JSON.stringify({ data: { search: {
-      nodes: Array.from({ length: size }, (_, i) => ({ number: (calls.length - 1) * 5 + i })),
+      nodes: Array.from({ length: size }, (_, i) => ({ number: (calls.length - 1) * 5 + i, repository: { nameWithOwner: 'demo/app' } })),
       pageInfo: { hasNextPage: true, endCursor: String(calls.length * 5) },
     } } }) };
   };
-  assert.equal((await searchPrs(run, 'is:pr')).length, 50);
+  const prs = await searchPrs(run, 'is:pr');
+  assert.equal(prs.length, 50);
+  assert.ok(prs.every(pr => pr.isDraft));
   assert.equal(calls.length, 10);
 });
 
 test('search stops at the last page and rejects partial GraphQL responses', async () => {
   const { searchPrs } = await import('./reviews.mjs');
-  const response = search => async () => ({ stdout: JSON.stringify({ data: { search } }) });
-  assert.deepEqual(await searchPrs(response({ nodes: [{ number: 1 }], pageInfo: { hasNextPage: false } }), 'is:pr'), [{ number: 1 }]);
+  const response = search => async (_cmd, args) => ({ stdout: JSON.stringify({ data: args.some(arg => arg.startsWith('number=')) ? { repository: { pullRequest: { number: 1 } } } : { search } }) });
+  assert.deepEqual((await searchPrs(response({ nodes: [{ number: 1, repository: { nameWithOwner: 'demo/app' } }], pageInfo: { hasNextPage: false } }), 'is:pr')).map(pr => pr.number), [1]);
   await assert.rejects(searchPrs(async () => ({ stdout: JSON.stringify({ data: { search: { nodes: [] } }, errors: [{ message: 'Resource limits for this query exceeded.' }] }) }), 'is:pr'), /Resource limits/);
   await assert.rejects(searchPrs(response({ nodes: [], pageInfo: { hasNextPage: true, endCursor: null } }), 'is:pr'), /cursor/i);
+});
+
+test('PR details shrink resource-limited pages and collect checks and threads across cursors', async () => {
+  const sizes = [];
+  const run = async (_cmd, args) => {
+    if (!args.some(arg => arg.startsWith('size='))) return { stdout: JSON.stringify({ data: { repository: { pullRequest: { state: 'OPEN', isDraft: false } } } }) };
+    const size = Number(args.find(arg => arg.startsWith('size=')).slice(5));
+    sizes.push(size);
+    if (size > 5) throw Object.assign(new Error('gh failed'), { stderr: 'gh: Resource limits for this query exceeded.' });
+    const next = args.includes('after=checks-next');
+    const contexts = { nodes: [{ name: next ? 'second' : 'first' }], pageInfo: { hasNextPage: !next, endCursor: 'checks-next' } };
+    const reviewThreads = { nodes: [{ isResolved: false }], pageInfo: { hasNextPage: false, endCursor: null } };
+    return { stdout: JSON.stringify({ data: { repository: { pullRequest: { state: 'OPEN', isDraft: false, commits: { nodes: [{ commit: { statusCheckRollup: { contexts } } }] }, reviewThreads } } } }) };
+  };
+  const [pr] = await hydrateReviews(run, [{ owner: 'demo', repo: 'app', number: 1 }]);
+  assert.deepEqual(sizes, [20, 10, 5, 5, 20, 10, 5]);
+  assert.deepEqual(pr.commits.nodes[0].commit.statusCheckRollup.contexts.nodes.map(check => check.name), ['first', 'second']);
+  assert.equal(pr.reviewThreads.nodes.length, 1);
+});
+
+test('PR details fetch metadata, merge status, checks and threads separately without losing results', async () => {
+  const run = async (_cmd, args) => {
+    const query = args.find(arg => arg.startsWith('query='));
+    assert.ok(!(query.includes('nameWithOwner') && query.includes('mergeable')));
+    const checks = query.includes('contexts(');
+    const threads = query.includes('reviewThreads(');
+    if (checks && threads) throw new Error('Resource limits for this query exceeded.');
+    const pr = { state: 'OPEN', isDraft: false };
+    if (checks) pr.commits = { nodes: [{ commit: { statusCheckRollup: { contexts: { nodes: [{ name: 'CI' }], pageInfo: { hasNextPage: false } } } } }] };
+    if (threads) pr.reviewThreads = { nodes: [{ isResolved: false }], pageInfo: { hasNextPage: false } };
+    return { stdout: JSON.stringify({ data: { repository: { pullRequest: pr } } }) };
+  };
+  const [pr] = await hydrateReviews(run, [{ owner: 'demo', repo: 'app', number: 1 }]);
+  assert.equal(pr.commits.nodes[0].commit.statusCheckRollup.contexts.nodes[0].name, 'CI');
+  assert.equal(pr.reviewThreads.nodes.length, 1);
 });

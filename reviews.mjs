@@ -1,9 +1,9 @@
-import { PR_FIELDS } from './lib.mjs';
+import { PR_FIELDS, MERGE_FIELDS, CHECK_FIELDS, THREAD_FIELDS } from './lib.mjs';
 
 const OPTIONS = { maxBuffer: 20e6, timeout: 60000 };
 const SEARCH_QUERY = `query($q: String!, $size: Int!, $after: String) {
   search(query: $q, type: ISSUE, first: $size, after: $after) {
-    nodes { ${PR_FIELDS} }
+    nodes { ... on PullRequest { number repository { nameWithOwner } } }
     pageInfo { hasNextPage endCursor }
   }
 }`;
@@ -24,12 +24,17 @@ export async function searchPrs(run, q) {
     if (!page.pageInfo.endCursor || page.pageInfo.endCursor === after) throw new Error('GitHub returned an invalid search cursor.');
     after = page.pageInfo.endCursor;
   }
-  return prs;
+  return mapLimited(prs, ({ number, repository }) => {
+    const [owner, repo] = repository.nameWithOwner.split('/');
+    return loadPr(run, { owner, repo, number });
+  });
 }
 
-const DETAIL_QUERY = `query($owner: String!, $repo: String!, $number: Int!) {
-  repository(owner: $owner, name: $repo) { pullRequest(number: $number) { ${PR_FIELDS} } }
-}`;
+function detailQuery(fields, paginated = false) {
+  return `query($owner: String!, $repo: String!, $number: Int!${paginated ? ', $size: Int!, $after: String' : ''}) {
+    repository(owner: $owner, name: $repo) { pullRequest(number: $number) { ${fields} } }
+  }`;
+}
 
 function scopeList(value, label) {
   const entries = [...new Set(value.split(',').map((item) => item.trim().toLowerCase()).filter(Boolean))];
@@ -87,11 +92,55 @@ export async function hydrateReviews(run, targets, knownPrs = []) {
   const prs = await mapLimited(targets, async ({ owner, repo, number }) => {
     const existing = known.get(`https://github.com/${owner}/${repo}/pull/${number}`.toLowerCase());
     if (existing) return existing;
-    const { stdout } = await run('gh', ['api', 'graphql', '-f', `query=${DETAIL_QUERY}`, '-f', `owner=${owner}`, '-f', `repo=${repo}`, '-F', `number=${number}`], OPTIONS);
-    const result = JSON.parse(stdout);
-    const pr = result.data?.repository?.pullRequest;
-    if (result.errors?.length || !pr) throw new Error('Could not load a requested review. Check that your GitHub CLI account has access to every review repository.');
-    return pr;
+    return loadPr(run, { owner, repo, number });
   });
   return prs.filter((pr) => pr.state === 'OPEN' && !pr.isDraft);
+}
+
+async function fetchDetail(run, target, fields, pagination) {
+  const { owner, repo, number } = target;
+  const args = ['api', 'graphql', '-f', `query=${detailQuery(fields, !!pagination)}`, '-f', `owner=${owner}`, '-f', `repo=${repo}`, '-F', `number=${number}`];
+  if (pagination) {
+    args.push('-F', `size=${pagination.size}`);
+    if (pagination.after) args.push('-f', `after=${pagination.after}`);
+  }
+  const { stdout } = await run('gh', args, OPTIONS);
+  const result = JSON.parse(stdout);
+  if (result.errors?.length) throw new Error(result.errors.map(error => error.message).join('; '));
+  const pr = result.data?.repository?.pullRequest;
+  if (!pr) throw new Error('Could not load a pull request. Check that your GitHub CLI account has access to the repository.');
+  return pr;
+}
+
+async function loadCollection(run, target, fields, select) {
+  const nodes = [];
+  let size = 20;
+  let after;
+  while (true) {
+    let page;
+    try {
+      page = select(await fetchDetail(run, target, fields, { size, after }));
+    } catch (error) {
+      if (size > 1 && /resource limits for this query exceeded/i.test(error.stderr || error.message)) {
+        size = Math.max(1, Math.floor(size / 2));
+        continue;
+      }
+      throw error;
+    }
+    nodes.push(...(page?.nodes ?? []));
+    if (!page?.pageInfo?.hasNextPage) return nodes;
+    const cursor = page.pageInfo.endCursor;
+    if (!cursor || cursor === after) throw new Error('GitHub returned an invalid pull request detail cursor.');
+    after = cursor;
+  }
+}
+
+async function loadPr(run, target) {
+  const pr = await fetchDetail(run, target, PR_FIELDS);
+  Object.assign(pr, await fetchDetail(run, target, MERGE_FIELDS));
+  const checks = await loadCollection(run, target, CHECK_FIELDS, pr => pr.commits?.nodes[0]?.commit.statusCheckRollup?.contexts);
+  const threads = await loadCollection(run, target, THREAD_FIELDS, pr => pr.reviewThreads);
+  pr.commits = { nodes: [{ commit: { statusCheckRollup: { contexts: { nodes: checks } } } }] };
+  pr.reviewThreads = { nodes: threads };
+  return pr;
 }

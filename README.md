@@ -111,8 +111,8 @@ Local settings, session artifacts, environment files, keys, and logs are exclude
 
 ## Limitations and troubleshooting
 
-- Each refresh searches up to 50 authored and 50 assigned PRs. Direct-review search also stops at 50; repository mode paginates all open PRs in its configured repositories. Both modes read up to 100 checks on the latest commit and 100 review threads per PR, without pagination for those details.
-- Repository mode makes more API calls than search. It limits each batch to eight concurrent requests and shares in-progress syncs across tabs using the same settings. If a repository cannot be read, the refresh shows an error and keeps the previous dashboard instead of silently hiding reviews.
+- Each refresh searches up to 50 authored and 50 assigned PRs. Direct-review search also stops at 50; repository mode paginates all open PRs in its configured repositories. Both modes fetch PR metadata, merge status, checks, and review threads in separate requests and paginate checks on the latest commit and review threads. Detail pages start at 20 items and shrink automatically if GitHub reports a query resource limit.
+- PR detail fetching and repository listing each limit their batches to eight concurrent requests and shares in-progress syncs across tabs using the same settings. If a repository cannot be read, the refresh shows an error and keeps the previous dashboard instead of silently hiding reviews.
 - "Ready to merge" is advisory. Confirm the current checks, approvals, and repository rules on GitHub before merging. Ignored checks do not count as blockers in this dashboard.
 - If authentication fails or a private repository is missing, run `gh auth status` and check that your CLI account has access, including any required organization SSO authorization.
 - If the port is already in use, stop the existing server or set a different `PORT`. If the macOS login agent fails to start, check `~/Library/Logs/merge-radar.log` and rerun `./install.sh` with Node.js and `gh` available in your terminal.
