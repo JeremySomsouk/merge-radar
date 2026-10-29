@@ -1,6 +1,32 @@
 import { PR_FIELDS } from './lib.mjs';
 
 const OPTIONS = { maxBuffer: 20e6, timeout: 60000 };
+const SEARCH_QUERY = `query($q: String!, $size: Int!, $after: String) {
+  search(query: $q, type: ISSUE, first: $size, after: $after) {
+    nodes { ${PR_FIELDS} }
+    pageInfo { hasNextPage endCursor }
+  }
+}`;
+
+export async function searchPrs(run, q) {
+  const prs = [];
+  let after;
+  while (prs.length < 50) {
+    const args = ['api', 'graphql', '-f', `query=${SEARCH_QUERY}`, '-f', `q=${q}`, '-F', `size=${Math.min(5, 50 - prs.length)}`];
+    if (after) args.push('-f', `after=${after}`);
+    const { stdout } = await run('gh', args, OPTIONS);
+    const result = JSON.parse(stdout);
+    if (result.errors?.length) throw new Error(result.errors.map(error => error.message).join('; '));
+    const page = result.data?.search;
+    if (!Array.isArray(page?.nodes) || !page.pageInfo) throw new Error('GitHub returned an invalid pull request search.');
+    prs.push(...page.nodes);
+    if (!page.pageInfo.hasNextPage) break;
+    if (!page.pageInfo.endCursor || page.pageInfo.endCursor === after) throw new Error('GitHub returned an invalid search cursor.');
+    after = page.pageInfo.endCursor;
+  }
+  return prs;
+}
+
 const DETAIL_QUERY = `query($owner: String!, $repo: String!, $number: Int!) {
   repository(owner: $owner, name: $repo) { pullRequest(number: $number) { ${PR_FIELDS} } }
 }`;

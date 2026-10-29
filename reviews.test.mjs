@@ -86,3 +86,29 @@ test('hydration drops newly closed or draft PRs and reports inaccessible PRs', a
   }
   await assert.rejects(hydrateReviews(async () => ({ stdout: '{"data":{"repository":null}}' }), targets), /access/);
 });
+
+test('search loads small pages with cursors and preserves the 50 PR cap', async () => {
+  const { searchPrs } = await import('./reviews.mjs');
+  const calls = [];
+  const run = async (_cmd, args) => {
+    const size = Number(args.find(arg => arg.startsWith('size=')).slice(5));
+    assert.ok(size <= 5);
+    const cursor = args.find(arg => arg.startsWith('after='))?.slice(6);
+    assert.equal(cursor, calls.length ? String(calls.length * 5) : undefined);
+    calls.push(args);
+    return { stdout: JSON.stringify({ data: { search: {
+      nodes: Array.from({ length: size }, (_, i) => ({ number: (calls.length - 1) * 5 + i })),
+      pageInfo: { hasNextPage: true, endCursor: String(calls.length * 5) },
+    } } }) };
+  };
+  assert.equal((await searchPrs(run, 'is:pr')).length, 50);
+  assert.equal(calls.length, 10);
+});
+
+test('search stops at the last page and rejects partial GraphQL responses', async () => {
+  const { searchPrs } = await import('./reviews.mjs');
+  const response = search => async () => ({ stdout: JSON.stringify({ data: { search } }) });
+  assert.deepEqual(await searchPrs(response({ nodes: [{ number: 1 }], pageInfo: { hasNextPage: false } }), 'is:pr'), [{ number: 1 }]);
+  await assert.rejects(searchPrs(async () => ({ stdout: JSON.stringify({ data: { search: { nodes: [] } }, errors: [{ message: 'Resource limits for this query exceeded.' }] }) }), 'is:pr'), /Resource limits/);
+  await assert.rejects(searchPrs(response({ nodes: [], pageInfo: { hasNextPage: true, endCursor: null } }), 'is:pr'), /cursor/i);
+});

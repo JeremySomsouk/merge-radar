@@ -2,8 +2,8 @@ import { createServer } from 'node:http';
 import { execFile } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
-import { PR_FIELDS, preparePrs } from './lib.mjs';
-import { findRepositoryReviews, hydrateReviews } from './reviews.mjs';
+import { preparePrs } from './lib.mjs';
+import { findRepositoryReviews, hydrateReviews, searchPrs } from './reviews.mjs';
 import { checkReviewNotifications, notifyMac } from './notifications.mjs';
 
 const run = promisify(execFile);
@@ -15,7 +15,6 @@ const ASSETS = new Map([
   ['/favicon.png', ['assets/favicon.png', 'image/png']],
   ['/ui-state.mjs', ['ui-state.mjs', 'text/javascript']],
 ]);
-const QUERY = `query($q: String!) { search(query: $q, type: ISSUE, first: 50) { nodes { ${PR_FIELDS} } } }`;
 const pendingLoads = new Map();
 const NOTIFICATION_STATE = new URL('./notification-state.json', import.meta.url);
 
@@ -42,8 +41,7 @@ async function pollNotifications() {
 async function search(keyword, extra, filter) {
   const title = keyword ? `"${keyword}" in:title` : '';
   const q = `is:open is:pr archived:false ${title} sort:updated-desc ${extra} ${filter}`;
-  const { stdout } = await run('gh', ['api', 'graphql', '-f', `query=${QUERY}`, '-f', `q=${q}`], { maxBuffer: 20e6 });
-  return JSON.parse(stdout).data.search.nodes;
+  return searchPrs(run, q);
 }
 
 async function loadConfig() {

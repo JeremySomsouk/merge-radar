@@ -58,7 +58,7 @@ if (search) {
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
     }
   }
-  console.log(JSON.stringify({ data: { search: { nodes } } }));
+  console.log(JSON.stringify({ data: { search: { nodes, pageInfo: { hasNextPage: false, endCursor: null } } } }));
 } else {
   fs.writeFileSync('details-started', '');
   const number = args.find(arg => arg.startsWith('number=')).slice(7);
